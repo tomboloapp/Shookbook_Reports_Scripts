@@ -1,0 +1,19 @@
+pandas>=2.0.0
+sqlalchemy>=2.0.0
+python-dotenv>=1.0.0
+openpyxl>=3.1.0
+
+# Database drivers - התקן לפי מסד הנתונים שלך:
+# עבור MySQL:
+# pymysql>=1.1.0
+# או
+# mysql-connector-python>=8.0.0
+
+# עבור PostgreSQL:
+# psycopg2-binary>=2.9.0
+
+# עבור SQL Server:
+# pyodbc>=4.0.0
+# או
+# pymssql>=2.2.0
+
