@@ -27,22 +27,28 @@ DB_CONFIG = {
 ALL_QUERIES = {
     "daily_sales_report": """
 Select
-p.id,
-p.name,
-p.name_heb,
-SUM(op.quantity_needed), SUM(op.quantity)
-p.price,
-p.product_list,
-op.quantity,
-op.quantity_needed
-SUM(p.price * op.quantity)
-, p.product_list
+    p.id as Product_ID,
+    p.name as Name_Hebrew,
+    p.name_heb as Product_Description,
+        SUM(op.quantity_needed) AS Total_Needed,
+    SUM(op.quantity) AS Total_Supplied,
+    SUM(op.quantity_needed) AS Total_Needed,
+     SUM(op.quantity) AS Total_Supplied,
+    p.price AS Price_Per_Unit,
+     SUM(p.price * op.quantity) AS Total_Cost,
+    p.product_list AS Product_List
+
+   
+
+
 from products p
-Join order_product op on op.product_id = p.id
-Join orders o on o.id = op.order_id
+         Join order_product op on op.product_id = p.id
+         Join orders o on o.id = op.order_id
 Where o.delivery_date = '{DELIVERY_DATE}'
-and (o.delivery_window in (0,1))
-And o.status IN (0,3,7)
+  and (o.delivery_window in (0,1))
+  And o.status IN (0,3,7)
+GROUP BY
+    p.id, p.name, p.name_heb, p.price, p.product_list;
 """
 }
 
