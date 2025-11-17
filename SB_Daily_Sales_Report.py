@@ -30,11 +30,13 @@ Select
 p.id,
 p.name,
 p.name_heb,
+SUM(op.quantity_needed), SUM(op.quantity)
 p.price,
 p.product_list,
 op.quantity,
 op.quantity_needed
-
+SUM(p.price * op.quantity)
+, p.product_list
 from products p
 Join order_product op on op.product_id = p.id
 Join orders o on o.id = op.order_id
@@ -43,6 +45,7 @@ and (o.delivery_window in (0,1))
 And o.status IN (0,3,7)
 """
 }
+
 
 # -----------------------------------------------------------------
 # STAGE 3: Logic
