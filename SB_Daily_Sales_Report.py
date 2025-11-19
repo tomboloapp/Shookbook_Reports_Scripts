@@ -27,16 +27,14 @@ DB_CONFIG = {
 ALL_QUERIES = {
     "daily_sales_report": """
 Select
-    p.id as Product_ID,
-    p.name as Name_Hebrew,
-    p.name_heb as Product_Description,
-    
-   
-    SUM(op.quantity_needed) AS Total_Needed,
+    p.id as `מזהה מוצר`,
+    p.name as `שם מוצר`,
+    p.name_heb as `תיאור מוצר`,
+    SUM(op.quantity_needed) AS  `הכמות הנדרשת`,
     SUM(op.quantity) AS Total_Supplied,
-    p.price AS Price_Per_Unit,
-    SUM(p.price * op.quantity) AS Total_Cost,
-    p.product_list AS Product_List
+    p.price AS `מחיר ליחידה`,
+    SUM(p.price * op.quantity) AS `עלות כוללת`,
+    p.product_list AS `רשימת מוצרים`
 
 from products p
     Join order_product op on op.product_id = p.id
@@ -58,56 +56,80 @@ GROUP BY
 # STAGE 3: Logic
 # -----------------------------------------------------------------
 
-def get_report_date():
-    """Requests a single report date from the user."""
-    # --- NO CHANGE IN THIS FUNCTION ---
-    print("Please enter the report date (format: YYYY-MM-DD).")
+def get_date_range_list():
+    """
+    Asks user for a date or range (DDMMYY, DD.MM.YY, DD/MM/YY).
+    Returns a list of date strings in 'YYYY-MM-DD' format.
+    """
+    print("\nEnter date range (e.g., 111125-131125) or single date (111125):")
+    user_input = input("Input: ").strip()
     
-    # Option: automatic calculation of "yesterday"
-    use_default = input("Use yesterday's date? (y/n, default 'yes'): ")
-    if use_default.lower() in ('', 'y', 'כן'):
-        yesterday_dt = datetime.now() - timedelta(days=1)
-        report_date_str = yesterday_dt.strftime('%Y-%m-%d')
-        print(f"Using date: {report_date_str}")
-        return report_date_str # Returns a single value
+    if not user_input:
+        print("No input provided. Exiting.")
+        sys.exit()
 
-    # Manual input
-    print("\nPlease enter date manually:")
-    report_date_str = input("    Report date (YYYY-MM-DD): ")
-    if report_date_str == '': # Basic validation
-        print("No date entered. Exiting.")
-        sys.exit() # Exits the script if nothing was entered
+    # Split the input by '-' to check if it's a range ; each date will be a part
+    # User-Defined Name: 'parts' (holds the start and end parts)
+    parts = user_input.split('-')
+    
+    # Allowed formats
+    # Library/Framework Code: formats recognized by datetime
+    valid_formats = ['%d%m%y', '%d.%m.%y', '%d/%m/%y']
+    
+    parsed_dates = []
+    
+    # Helper function to try parsing a single string
+    def try_parse(d_str):
+        for fmt in valid_formats:
+            try:
+                # Core Language Syntax: try/except flow control
+                return datetime.strptime(d_str.strip(), fmt)
+            except ValueError:
+                continue
+        print(f"Error: Could not recognize format for '{d_str}'. Use DDMMYY.")
+        sys.exit()
+
+    start_date = try_parse(parts[0])
+    
+    # If there is a second part, it's a range. Otherwise start=end.
+    end_date = try_parse(parts[1]) if len(parts) > 1 else start_date
+    
+    # Generate the list of all dates in between
+    # User-Defined Name: 'date_list'
+    date_list = []
+    current = start_date
+    while current <= end_date:
+        date_list.append(current.strftime('%Y-%m-%d'))
+        current += timedelta(days=1)
         
-    print(f"Using date: {report_date_str}")
-    return report_date_str # Returns a single value
+    return date_list
 
 def main():
     print("--- Starting automated report script ---")
 
-    # 1. Get a single date from the user
-    delivery_date_str = get_report_date() 
+    # 1. Get list of dates
+    # User-Defined Name: dates_to_process (List of strings)
+    dates_to_process = get_date_range_list()
     
-    # Create a filename suitable for a single day
-    output_filename = f"Shookbook_daily_Sales_report_{delivery_date_str}.xlsx"
+    # Create a dynamic filename based on start and end dates
+    # User-Defined Name: start_str, end_str
+    start_str = dates_to_process[0]
+    end_str = dates_to_process[-1]
+    output_filename = f"Sales_Report_Range_{start_str}_to_{end_str}.xlsx"
     
-    # 2. Create a connection to the database
-    #    (Validation check updated to look for DB_NAME)
+    # 2. Database Connection (Same as before)
     missing_config = [key for key, value in DB_CONFIG.items() if not value]
     if missing_config:
-        print(" ERROR: Not all connection details are defined in/loaded from .env file.")
         print(f"Missing connection info: {', '.join(missing_config)}")
-        print("Please ensure the .env file exists and the variable names match (DB_DRIVER, DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME).")
         return
-   
 
-    #database connection details as a string (url + passward + port + database) 
-        #the createengine uses this string to create a connection to the database
     connection_string = (
         f"{DB_CONFIG['driver']}://"
         f"{DB_CONFIG['username']}:{DB_CONFIG['password']}"
         f"@{DB_CONFIG['host']}:{DB_CONFIG['port']}"
         f"/{DB_CONFIG['database']}"
     )
+    
     try:
         engine = create_engine(connection_string)
         print("Database connection successful!")
@@ -115,73 +137,66 @@ def main():
         print(f"Database connection error: {e}")
         return
 
-    # 3. Run the queries and collect the results
-    print("Starting to run queries...")
-    
-    
+    print(f"\nPreparing to export {len(dates_to_process)} days to: {output_filename}")
 
-    
-    # Convert the date string back to a datetime object for calculation
+    # 3. Open the Excel Writer ONCE (Context Manager)
+    # We keep the file open while we loop through the dates
     try:
-        delivery_date_obj = datetime.strptime(delivery_date_str, '%Y-%m-%d')
-    except ValueError:
-        # This handles if the user typed an invalid date format
-        print(f"ERROR: The date '{delivery_date_str}' is not in the correct YYYY-MM-DD format. Exiting.")
-        sys.exit()
-        
-   # Calculate the day tomorrow 
-    day_tomorrow_obj = delivery_date_obj + timedelta(days=1)
-    
-    # Convert the day tomorrow back to a string
-    day_tomorrow_str = day_tomorrow_obj.strftime('%Y-%m-%d')
-    
-# Create a dictionary with BOTH date strings
-    DATE_VARS = {
-        'DELIVERY_DATE': delivery_date_str,
-        'DAY_TOMORROW': day_tomorrow_str
-    }
-    print(f"Querying for {DATE_VARS['DELIVERY_DATE']} (window 1) and {DATE_VARS['DAY_TOMORROW']} (window 0).")
-
-
-    #creating an empty delivery Results Dictionary object to store the results of the queries
-    delivery_results_to_export = {}
-
-    #iterating over the ALL_QUERIES dictionary object and running the queries
-    for sheet_name, sql_query in ALL_QUERIES.items():
-        print(f"  > Running query: '{sheet_name}'...")
-        try:
-            # --- CHANGED: Using DATE_VARS instead of the old dictionary ---
-            formatted_query = sql_query.format_map(DATE_VARS)
-
-            #running the query, and using "Pandas" library to read the results
-            results_table_df = pd.read_sql(formatted_query, con=engine)
-            
-            #we fill our results dictionary object
-            delivery_results_to_export[sheet_name] = results_table_df
-            print(f"    > Success! Found {len(results_table_df)} records.")
-
-        except Exception as e:
-            print(f"    > !!! FAILED !!! Query '{sheet_name}' execution failed: {e}")
-            delivery_results_to_export[sheet_name] = pd.DataFrame({'Error': [str(e)]})
-
-   
-    print(f"\nExporting all results to file: {output_filename} ...")
-    try:
-    
-    # 4.using pandas library to export all results to one Excel file 
-    # "writer" is just a pandas object that allows us to write to the Excel file
         with pd.ExcelWriter(output_filename, engine='openpyxl') as writer:
-            for sheet_name, results_table_df in delivery_results_to_export.items():
-                #writing the results table dataframe file into a new Excel file
-                #"sheet_name" will bethe name of the sheet in the Excel file (the query name)
-                #index=False means we don't want to write the index from the DF file column in the Excel file
-                results_table_df.to_excel(writer, sheet_name=sheet_name, index=False)
-        
-        print("--- Script completed successfully! ---")
-        print(f"Open the file '{output_filename}' to see the results.")
-    
+            
+            # --- MAIN LOOP: Iterate over each date ---
+            for current_date_str in dates_to_process:
+                print(f"\n--- Processing Date: {current_date_str} ---")
+                
+                # A. Logic: Calculate Tomorrow
+                try:
+                    curr_obj = datetime.strptime(current_date_str, '%Y-%m-%d')
+                    next_obj = curr_obj + timedelta(days=1)
+                    next_day_str = next_obj.strftime('%Y-%m-%d')
+                except ValueError as e:
+                    print(f"Date error: {e}")
+                    continue
+
+                # B. Update Variables for Query
+                DATE_VARS = {
+                    'DELIVERY_DATE': current_date_str,
+                    'DAY_TOMORROW': next_day_str
+                }
+
+                # C. Run Query
+                # We assume only one query type exists in ALL_QUERIES for now
+                for query_name, sql_template in ALL_QUERIES.items():
+                    formatted_query = sql_template.format_map(DATE_VARS)
+                    
+                    try:
+                        df = pd.read_sql(formatted_query, con=engine)
+                        
+                        # Check if empty
+                        if df.empty:
+                            print("   > No data found for this date.")
+                            # Create a dummy DF so we still have a tab
+                            df = pd.DataFrame({'Status': ['No Data']})
+                        else:
+                            print(f"   > Found {len(df)} records.")
+
+                        # D. Write to Excel Sheet
+                        # We name the sheet after the DATE (e.g., "2025-11-11")
+                        sheet_title = current_date_str 
+                        df.to_excel(writer, sheet_name=sheet_title, index=False)
+                        
+                        # --- NEW: RIGHT-TO-LEFT (RTL) CONFIGURATION ---
+                        # Library/Framework Code: Accessing the worksheet object from openpyxl
+                        worksheet = writer.sheets[sheet_title]
+                        worksheet.sheet_view.rightToLeft = True
+
+                    except Exception as e:
+                        print(f"   > Query failed: {e}")
+
+        print("\n--- Script completed successfully! ---")
+        print(f"File saved: {output_filename}")
+
     except Exception as e:
-        print(f"!!! CRITICAL ERROR while saving Excel file: {e}")
+        print(f"CRITICAL FILE ERROR: {e}")
 
 
 # Running the main function
