@@ -30,23 +30,24 @@ Select
     p.id as Product_ID,
     p.name as Name_Hebrew,
     p.name_heb as Product_Description,
-        SUM(op.quantity_needed) AS Total_Needed,
-    SUM(op.quantity) AS Total_Supplied,
+    
+   
     SUM(op.quantity_needed) AS Total_Needed,
-     SUM(op.quantity) AS Total_Supplied,
+    SUM(op.quantity) AS Total_Supplied,
     p.price AS Price_Per_Unit,
-     SUM(p.price * op.quantity) AS Total_Cost,
+    SUM(p.price * op.quantity) AS Total_Cost,
     p.product_list AS Product_List
 
-   
-
-
 from products p
-         Join order_product op on op.product_id = p.id
-         Join orders o on o.id = op.order_id
-Where o.delivery_date = '{DELIVERY_DATE}'
-  and (o.delivery_window in (0,1))
-  And o.status IN (0,3,7)
+    Join order_product op on op.product_id = p.id
+    Join orders o on o.id = op.order_id
+Where 
+    
+    (o.delivery_date = '{DELIVERY_DATE}' AND o.delivery_window = 1) 
+    OR 
+    (o.delivery_date = '{DAY_TOMORROW}' AND o.delivery_window = 0)
+    
+    And o.status IN (0,3,7)
 GROUP BY
     p.id, p.name, p.name_heb, p.price, p.product_list;
 """
@@ -59,6 +60,7 @@ GROUP BY
 
 def get_report_date():
     """Requests a single report date from the user."""
+    # --- NO CHANGE IN THIS FUNCTION ---
     print("Please enter the report date (format: YYYY-MM-DD).")
     
     # Option: automatic calculation of "yesterday"
@@ -70,8 +72,8 @@ def get_report_date():
         return report_date_str # Returns a single value
 
     # Manual input
-    print("\nPlease enter date range manually:")
-    report_date_str = input("  Report date (YYYY-MM-DD): ")
+    print("\nPlease enter date manually:")
+    report_date_str = input("    Report date (YYYY-MM-DD): ")
     if report_date_str == '': # Basic validation
         print("No date entered. Exiting.")
         sys.exit() # Exits the script if nothing was entered
@@ -83,10 +85,10 @@ def main():
     print("--- Starting automated report script ---")
 
     # 1. Get a single date from the user
-    delivery_date = get_report_date() 
+    delivery_date_str = get_report_date() 
     
     # Create a filename suitable for a single day
-    output_filename = f"Shookbook_daily_Sales_report_{delivery_date}.xlsx"
+    output_filename = f"Shookbook_daily_Sales_report_{delivery_date_str}.xlsx"
     
     # 2. Create a connection to the database
     #    (Validation check updated to look for DB_NAME)
@@ -96,9 +98,9 @@ def main():
         print(f"Missing connection info: {', '.join(missing_config)}")
         print("Please ensure the .env file exists and the variable names match (DB_DRIVER, DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME).")
         return
- 
+   
 
-   #database connection details as a string (url + passward + port + database) 
+    #database connection details as a string (url + passward + port + database) 
         #the createengine uses this string to create a connection to the database
     connection_string = (
         f"{DB_CONFIG['driver']}://"
@@ -117,50 +119,55 @@ def main():
     print("Starting to run queries...")
     
     
-    #creating a Delivery Date dictionary (object) reffrencing the dates we got from the user from the get_date_range function
-    #these are will be the variables for the dates in the queries
 
-    DELIVERY_DATE = {
-        'DELIVERY_DATE': delivery_date #DELIVERY_DATE['DELIVERY_DATE'] is the delivery date
+    
+    # Convert the date string back to a datetime object for calculation
+    try:
+        delivery_date_obj = datetime.strptime(delivery_date_str, '%Y-%m-%d')
+    except ValueError:
+        # This handles if the user typed an invalid date format
+        print(f"ERROR: The date '{delivery_date_str}' is not in the correct YYYY-MM-DD format. Exiting.")
+        sys.exit()
+        
+   # Calculate the day tomorrow 
+    day_tomorrow_obj = delivery_date_obj + timedelta(days=1)
+    
+    # Convert the day tomorrow back to a string
+    day_tomorrow_str = day_tomorrow_obj.strftime('%Y-%m-%d')
+    
+# Create a dictionary with BOTH date strings
+    DATE_VARS = {
+        'DELIVERY_DATE': delivery_date_str,
+        'DAY_TOMORROW': day_tomorrow_str
     }
+    print(f"Querying for {DATE_VARS['DELIVERY_DATE']} (window 1) and {DATE_VARS['DAY_TOMORROW']} (window 0).")
+
 
     #creating an empty delivery Results Dictionary object to store the results of the queries
-
     delivery_results_to_export = {}
 
-#iterating over the ALL_QUERIES dictionary object and running the queries
-#the .item() method returns a tuple of the key and value
-# it automatically iterates over the dictionary and assigns the key to the 1st parameter and value to the 2nd parameter (in  my case - sheet_name and sql_query respectively)
-# sheet_name will get the key from the dictionary (the query name)
-#sql_query will get the value from the dictionary (the query itself)
+    #iterating over the ALL_QUERIES dictionary object and running the queries
     for sheet_name, sql_query in ALL_QUERIES.items():
         print(f"  > Running query: '{sheet_name}'...")
         try:
-          #scanning the sql_query (the query itself in the dictionary) and replacing the placeholders with the values from the DATE_RANGE dictionary
-          #if it dosent find any, it just leaves the queryas is)
-            formatted_query = sql_query.format_map(DELIVERY_DATE)
+            # --- CHANGED: Using DATE_VARS instead of the old dictionary ---
+            formatted_query = sql_query.format_map(DATE_VARS)
 
-            #running the query, and using "Pandas" library to read the results, turn them into a table, and store them in a panda DF (dataframe) object we call "results_table_df"
-
+            #running the query, and using "Pandas" library to read the results
             results_table_df = pd.read_sql(formatted_query, con=engine)
             
-
-
-         #we fill our results dictionary object with the query name as the key, and the results table dataframe as the value
+            #we fill our results dictionary object
             delivery_results_to_export[sheet_name] = results_table_df
             print(f"    > Success! Found {len(results_table_df)} records.")
 
         except Exception as e:
             print(f"    > !!! FAILED !!! Query '{sheet_name}' execution failed: {e}")
-          
             delivery_results_to_export[sheet_name] = pd.DataFrame({'Error': [str(e)]})
 
    
-   
-
     print(f"\nExporting all results to file: {output_filename} ...")
     try:
-   
+    
     # 4.using pandas library to export all results to one Excel file 
     # "writer" is just a pandas object that allows us to write to the Excel file
         with pd.ExcelWriter(output_filename, engine='openpyxl') as writer:
